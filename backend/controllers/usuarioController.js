@@ -68,3 +68,30 @@ export const eliminarUsuario = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Login de usuario
+export const loginUsuario = async (req, res) => {
+  const { email, password } = req.body;
+  
+  try {
+    // Verificar si el usuario existe
+    const usuario = await Usuario.findOne({ where: { email } });
+    if (!usuario) {
+      return res.status(404).json({ error: 'El usuario no existe' });
+    }
+    
+    // Verificar la contraseña
+    if (!usuario.veryficarPassword(password)) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
+    
+    // Devolver información del usuario (sin contraseña)
+    res.status(200).json({
+      id: usuario.id,
+      nombre: usuario.nombre,
+      email: usuario.email
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

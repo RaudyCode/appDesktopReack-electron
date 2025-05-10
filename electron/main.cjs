@@ -6,7 +6,7 @@ function createWindow() {
     width: 1000,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'electron/preload.cjs'),
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
     },

@@ -2,11 +2,14 @@ import express from 'express';
 import sequelize from './config/db.js';
 import usuarioRoutes from './routes/usuarioRoutes.js';
 import bodyParser from 'body-parser';
+import cors from 'cors';
 
 // Inicializamos Express
 const app = express();
 
 // Middleware
+app.use(cors());
+app.use(express.json());
 app.use(bodyParser.json());
 
 // Rutas de usuarios
