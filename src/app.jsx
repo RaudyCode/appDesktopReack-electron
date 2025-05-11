@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Rutas from './components/Rutas';
 
 function App() {
   const [activeForm, setActiveForm] = useState(null);
@@ -29,6 +30,7 @@ function App() {
   };
 
   const handleChange = (e) => {
+    e.persist?.(); // Ensure the event persists for async state updates
     const { name, value } = e.target;
     setFormData(prevState => ({
       ...prevState,
@@ -150,6 +152,11 @@ function App() {
     }
   }, []);
 
+  // Renderizar Rutas directamente si el usuario está logueado
+  if (userLoggedIn && userData) {
+    return <Rutas userData={userData} onLogout={handleLogout} />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-gray-100">
       {/* Welcome section */}
@@ -166,35 +173,21 @@ function App() {
           Gestiona tus préstamos de forma rápida y segura con nuestra aplicación.
         </p>
 
-        {userLoggedIn ? (
-          <div className="mt-8 flex flex-col items-center">
-            <p className="text-xl text-green-700 font-semibold">
-              Bienvenido, {userData?.nombre}
-            </p>
-            <button 
-              onClick={handleLogout}
-              className="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300"
-            >
-              Cerrar Sesión
-            </button>
-          </div>
-        ) : (
-          <div className="flex gap-4 mt-8">
-            <button 
-              onClick={showLoginForm}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md shadow-md transition duration-300"
-            >
-              Iniciar Sesión
-            </button>
-            
-            <button 
-              onClick={showRegisterForm}
-              className="bg-white hover:bg-gray-100 border border-green-600 text-green-600 font-bold py-3 px-6 rounded-md shadow-md transition duration-300"
-            >
-              Registrarse
-            </button>
-          </div>
-        )}
+        <div className="flex gap-4 mt-8">
+          <button 
+            onClick={showLoginForm}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md shadow-md transition duration-300"
+          >
+            Iniciar Sesión
+          </button>
+          
+          <button 
+            onClick={showRegisterForm}
+            className="bg-white hover:bg-gray-100 border border-green-600 text-green-600 font-bold py-3 px-6 rounded-md shadow-md transition duration-300"
+          >
+            Registrarse
+          </button>
+        </div>
       </div>
 
       {/* Modal for forms */}
