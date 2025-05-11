@@ -5,7 +5,8 @@ import {
   obtenerClientesPorRuta,
   obtenerCliente,
   actualizarCliente,
-  eliminarCliente
+  eliminarCliente,
+  filtrarClientes
 } from '../controllers/clientesController.js';
 import protegerRuta from '../middleware/authMiddleware.js';
 
@@ -17,6 +18,7 @@ router.use(protegerRuta);
 // Rutas CRUD para clientes
 router.post('/clientes', crearCliente);
 router.get('/clientes', obtenerClientes);
+router.get('/clientes/filtrar', filtrarClientes);
 router.get('/clientes/ruta/:rutaId', obtenerClientesPorRuta);
 router.get('/clientes/:id', obtenerCliente);
 router.put('/clientes/:id', actualizarCliente);

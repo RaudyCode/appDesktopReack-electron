@@ -7,9 +7,15 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
+    "electron": "wait-on http://localhost:5173 && electron .",
     "start": "electron .",
     "server": "cd backend && node app.js",
-    "start:all": "concurrently \"npm run server\" \"npm run dev\""
+    "start:all": "concurrently \"npm run server\" \"npm run dev\"",
+    "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "seed-test": "cd backend && node scripts/seedTestData.js",
+    "seed-create": "cd backend && node scripts/seedTestData.js create",
+    "seed-remove": "cd backend && node scripts/seedTestData.js remove"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

@@ -24,7 +24,7 @@ const Pagos = db.define('pagos', {
         allowNull: false
     },
     estadoPago: {
-        type: DataTypes.ENUM('a tiempo', 'atrasado', 'parcial', 'en mora'),
+        type: DataTypes.ENUM('a tiempo', 'atrasado', 'parcial', 'atrasado y parcial', 'fuera de tiempo', 'fuera de tiempo y parcial', 'en mora'),
         allowNull: false,
         defaultValue: 'a tiempo'
     }

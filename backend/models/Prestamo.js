@@ -42,6 +42,37 @@ const Prestamo = db.define('prestamos', {
         allowNull: false,
         defaultValue: 0 // Inicialmente no hay semanas atrasadas
     },
+    // Nuevos campos para manejo de atrasos
+    pagosAtrasados: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0 // Contador histórico de pagos atrasados
+    },
+    pagosATiempo: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0 // Contador histórico de pagos realizados a tiempo
+    },
+    pagosParciales: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0 // Contador histórico de pagos parciales
+    },
+    atrasosNoPagados: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0 // Número actual de atrasos pendientes de pago
+    },
+    montoAtrasosNoPagados: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0 // Monto acumulado de atrasos pendientes
+    },
+    semanasConsecutivasAtraso: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0 // Contador de semanas consecutivas en atraso
+    },
     fechaInicio: {
         type: DataTypes.DATEONLY,
         allowNull: false
@@ -58,12 +89,15 @@ const Prestamo = db.define('prestamos', {
         type: DataTypes.DATEONLY,
         allowNull: true
     },
+    fechaUltimoAtraso: {
+        type: DataTypes.DATEONLY,
+        allowNull: true // Fecha del último atraso registrado
+    },
     estado: {
-        type: DataTypes.ENUM('activo', 'pagado', 'moroso'),
+        type: DataTypes.ENUM('activo', 'pagado', 'moroso', 'con pagos parciales'),
         allowNull: false,
         defaultValue: 'activo'
     }
-
 })
 
 export default Prestamo

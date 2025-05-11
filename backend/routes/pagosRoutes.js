@@ -6,7 +6,9 @@ import {
   obtenerPago,
   eliminarPago,
   generarRecibo,
-  generarRecibosRuta
+  generarRecibosRuta,
+  registrarAtraso,
+  actualizarPago
 } from '../controllers/pagosController.js';
 import protegerRuta from '../middleware/authMiddleware.js';
 
@@ -21,6 +23,12 @@ router.get('/pagos', obtenerPagos);
 router.get('/pagos/prestamo/:prestamoId', obtenerPagosPorPrestamo);
 router.get('/pagos/:id', obtenerPago);
 router.delete('/pagos/:id', eliminarPago);
+
+// Ruta para actualizar un pago
+router.put('/pagos/:id', actualizarPago);
+
+// Ruta para registrar atrasos
+router.post('/pagos/atraso', registrarAtraso);
 
 // Rutas para generación de recibos
 router.get('/recibos/pago/:pagoId', generarRecibo);

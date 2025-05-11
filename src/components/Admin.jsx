@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 
 function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
   const [clientes, setClientes] = useState([]);
+  const [clientesOriginales, setClientesOriginales] = useState([]);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [prestamos, setPrestamos] = useState([]);
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState(null);
@@ -43,6 +44,14 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
     }
   }, [rutaSeleccionada]);
 
+  // Asegurarse de que clientesOriginales se inicializa correctamente cuando cambia clientes
+  useEffect(() => {
+    // Solo actualizar clientesOriginales si clientes tiene datos y clientesOriginales está vacío
+    if (clientes && clientes.length > 0 && (!clientesOriginales || clientesOriginales.length === 0)) {
+      setClientesOriginales([...clientes]);
+    }
+  }, [clientes]);
+
   // Obtener clientes por ruta
   const fetchClientesPorRuta = async (rutaId) => {
     try {
@@ -62,7 +71,15 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       }
       
       const data = await response.json();
-      setClientes(data);
+      if (data && Array.isArray(data)) {
+        setClientes(data);
+        setClientesOriginales(data); // Guardar copia de los clientes originales
+      } else {
+        console.error('Datos de clientes no válidos:', data);
+        setClientes([]);
+        setClientesOriginales([]);
+      }
+      
       setLoading(false);
     } catch (error) {
       console.error('Error en fetchClientesPorRuta:', error);
@@ -136,10 +153,20 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
 
   // Seleccionar un préstamo y cargar sus pagos
   const seleccionarPrestamo = (prestamo) => {
-    setPrestamoSeleccionado(prestamo);
+    // Asegurarnos de que los campos numéricos sean realmente números
+    const prestamoConTiposCorrectos = {
+      ...prestamo,
+      semana: Number(prestamo.semana),
+      cuota: Number(prestamo.cuota),
+      monto: Number(prestamo.monto),
+      totalPagado: Number(prestamo.totalPagado || 0),
+      totalApagar: Number(prestamo.totalApagar || prestamo.monto * 1.3)
+    };
+    
+    setPrestamoSeleccionado(prestamoConTiposCorrectos);
     setPagoForm({
       ...pagoForm,
-      monto: prestamo.cuota
+      monto: prestamoConTiposCorrectos.cuota.toString()
     });
     setVista('pagos');
     fetchPagosPorPrestamo(prestamo.id);
@@ -189,9 +216,22 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
 
   // Toggle the payment form
   const togglePaymentForm = () => {
-    setShowPagoForm(!showPagoForm);
-    // Reset error message when toggling form
+    // Si estamos abriendo el formulario, reiniciar los valores
+    if (!showPagoForm) {
+      // Asegurarnos que los valores son strings para los inputs
+      setPagoForm({
+        monto: prestamoSeleccionado ? prestamoSeleccionado.cuota.toString() : '',
+        fecha: new Date().toISOString().split('T')[0],
+        montoAbonado: '0'
+      });
+      console.log("Formulario de pago inicializado con valores por defecto");
+    }
+    
+    // Limpiar cualquier mensaje de error
     setErrorMsg('');
+    
+    // Cambiar visibilidad del formulario
+    setShowPagoForm(!showPagoForm);
   };
 
   // Manejar cambios en el formulario de préstamo
@@ -223,15 +263,44 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
 
   // Manejar cambios en el formulario de pago
   const handlePagoChange = (e) => {
+    // Prevenir comportamiento extraño asegurando que el evento se maneje correctamente
+    if (!e || !e.target) {
+      console.error("Evento inválido en handlePagoChange:", e);
+      return;
+    }
+    
     const { name, value } = e.target;
+    
+    // Validación específica por tipo de campo
+    if (name === 'monto' || name === 'montoAbonado') {
+      // Para campos numéricos, asegurar que son válidos
+      const numValue = value === '' ? '' : parseFloat(value);
+      if (value !== '' && (isNaN(numValue) || numValue < 0)) {
+        // No actualizar si es un valor inválido
+        console.warn(`Valor inválido para ${name}:`, value);
+        return;
+      }
+    }
+    
+    // Actualizar estado de forma segura, creando un nuevo objeto
     setPagoForm(prevState => ({
       ...prevState,
       [name]: value
     }));
+    
+    // Log de depuración
+    console.log(`Campo actualizado: ${name} = ${value}`);
   };
 
   // Determinar el estado de un pago (a tiempo, parcial o atrasado)
-  const determinarEstadoPago = (montoRecibido, cuotaCompleta, fechaPago, fechaEsperada) => {
+  const determinarEstadoPago = (montoRecibido, cuotaCompleta, fechaPago, fechaEsperada, aplicadoAAtraso = false) => {
+    // Si el pago se está aplicando a un atraso previo, marcarlo como "fuera de tiempo"
+    if (aplicadoAAtraso) {
+      return parseFloat(montoRecibido) < parseFloat(cuotaCompleta) 
+        ? 'fuera de tiempo y parcial' 
+        : 'fuera de tiempo';
+    }
+    
     // Convertir fechas a objetos Date
     const fechaPagoObj = new Date(fechaPago);
     const fechaEsperadaObj = new Date(fechaEsperada);
@@ -380,6 +449,19 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       return;
     }
     
+    // Si el monto es menor que la cuota, mostrar confirmación al usuario
+    if (parseFloat(pagoForm.monto) < parseFloat(prestamoSeleccionado.cuota)) {
+      const confirmarPagoParcial = confirm(
+        `Estás registrando un pago parcial de ${formatCurrency(parseFloat(pagoForm.monto))} ` +
+        `que es menor que la cuota completa de ${formatCurrency(parseFloat(prestamoSeleccionado.cuota))}.\n\n` +
+        `¿Deseas continuar con este pago parcial?`
+      );
+      
+      if (!confirmarPagoParcial) {
+        return;
+      }
+    }
+    
     try {
       setLoading(true);
       
@@ -390,13 +472,10 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       const fechaEsperada = new Date(fechaInicio);
       fechaEsperada.setDate(fechaEsperada.getDate() + diasTranscurridos);
       
-      // Determinar estado del pago (a tiempo, parcial, atrasado)
-      const estadoPago = determinarEstadoPago(
-        pagoForm.monto,
-        prestamoSeleccionado.cuota,
-        pagoForm.fecha,
-        fechaEsperada.toISOString().split('T')[0]
-      );
+      // Verificar si hay atrasos acumulados
+      const atrasosNoPagados = prestamoSeleccionado.atrasosNoPagados || 0;
+      let aplicarAAtraso = false;
+      let detalleAtrasos = '';
       
       // Calcular el saldo pendiente total
       const saldoPendiente = (prestamoSeleccionado.totalApagar || prestamoSeleccionado.monto * 1.3) - (prestamoSeleccionado.totalPagado || 0);
@@ -404,10 +483,79 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       // Determinar si es un pago completo del préstamo
       const esLiquidacionTotal = parseFloat(pagoForm.monto) >= saldoPendiente;
       
-      // Verificar si hay atrasos acumulados
-      const atrasosNoPagados = prestamoSeleccionado.atrasosNoPagados || 0;
-      let aplicarAAtraso = false;
-      let detalleAtrasos = '';
+      // Buscar primero si hay un pago atrasado para la semana actual
+      const pagoAtrasadoActual = pagos.find(p => 
+        p.semana === prestamoSeleccionado.semana && 
+        p.estadoPago === 'atrasado' && 
+        p.monto === 0
+      );
+      
+      if (pagoAtrasadoActual) {
+        // Si hay un pago atrasado para la semana actual, preguntar si desea actualizarlo
+        const confirmarActualizacion = confirm(
+          `Se encontró un pago marcado como atrasado para la semana ${prestamoSeleccionado.semana}.\n\n` +
+          `¿Deseas actualizar este registro en lugar de crear uno nuevo?\n\n` +
+          `Esto cambiará el estado del pago a "fuera de tiempo" y aplicará el monto de ${formatCurrency(parseFloat(pagoForm.monto))}.`
+        );
+        
+        if (confirmarActualizacion) {
+          // Determinar el estado del pago actualizado
+          const estadoPago = determinarEstadoPago(
+            pagoForm.monto,
+            prestamoSeleccionado.cuota,
+            pagoForm.fecha,
+            fechaEsperada.toISOString().split('T')[0],
+            true // Este pago se aplica a un atraso existente
+          );
+          
+          // Actualizar el pago atrasado existente
+          const response = await fetch(`http://localhost:4000/api/pagos/${pagoAtrasadoActual.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': String(userData.id)
+            },
+            body: JSON.stringify({
+              monto: parseFloat(pagoForm.monto),
+              fecha: pagoForm.fecha,
+              montoAbonado: parseFloat(pagoForm.montoAbonado || 0),
+              estadoPago: estadoPago,
+              actualizandoAtraso: true
+            })
+          });
+          
+          if (!response.ok) {
+            // Si el endpoint PUT no existe aún, mostrar mensaje
+            alert('La funcionalidad de actualización de pagos atrasados no está implementada en el backend. Se requiere añadir esta funcionalidad.');
+            
+            // Aquí deberíamos completar la operación de todas formas, creando un nuevo pago
+            // Pero con un estado 'fuera de tiempo' para diferenciar visualmente
+            console.log('Fallback: Creando un nuevo pago con estado "fuera de tiempo"');
+            aplicarAAtraso = true;
+          } else {
+            const data = await response.json();
+            alert(`Pago actualizado correctamente de atrasado a fuera de tiempo.`);
+            
+            // Limpiar formulario y recargar datos
+            setPagoForm({
+              monto: prestamoSeleccionado.cuota,
+              fecha: new Date().toISOString().split('T')[0],
+              montoAbonado: '0'
+            });
+            togglePaymentForm();
+            
+            // Actualizar préstamo seleccionado con los datos actualizados
+            setPrestamoSeleccionado(data.prestamo);
+            
+            // Recargar pagos y préstamos
+            fetchPagosPorPrestamo(prestamoSeleccionado.id);
+            fetchPrestamosPorCliente(clienteSeleccionado.id);
+            
+            setLoading(false);
+            return; // Terminamos aquí si la actualización se realizó correctamente
+          }
+        }
+      }
       
       if (atrasosNoPagados > 0 && !esLiquidacionTotal) {
         aplicarAAtraso = true;
@@ -424,22 +572,56 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
         }
       }
       
+      // Si es liquidación total, confirmar con el usuario
+      if (esLiquidacionTotal) {
+        const semanaActual = prestamoSeleccionado.semana;
+        const semanasRestantes = prestamoSeleccionado.plazo - semanaActual + 1;
+        
+        const confirmarLiquidacion = confirm(
+          `Este pago de ${formatCurrency(parseFloat(pagoForm.monto) + parseFloat(pagoForm.montoAbonado || 0))} ` +
+          `cubrirá el saldo pendiente total de ${formatCurrency(saldoPendiente)}.\n\n` +
+          `¿Deseas completar el préstamo y registrar automáticamente ${semanasRestantes} pago(s) para las semanas restantes?`
+        );
+        
+        if (!confirmarLiquidacion) {
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Determinar estado del pago (a tiempo, parcial, atrasado o fuera de tiempo)
+      const estadoPago = determinarEstadoPago(
+        pagoForm.monto,
+        prestamoSeleccionado.cuota,
+        pagoForm.fecha,
+        fechaEsperada.toISOString().split('T')[0],
+        aplicarAAtraso
+      );
+      
       // Preparar datos adicionales para pago completo o atrasos
       const datosAdicionales = {
         ...(esLiquidacionTotal ? { esLiquidacionTotal: true, saldoPendiente: saldoPendiente } : {}),
         ...(aplicarAAtraso ? { aplicarAAtraso: true, atrasosNoPagados: atrasosNoPagados } : {})
       };
       
-      console.log("Enviando pago normal:", {
+      // Preparar los datos del pago, asegurando que todos los campos obligatorios estén presentes
+      const datosPago = {
         prestamoId: prestamoSeleccionado.id,
-        monto: parseFloat(pagoForm.monto),
+        monto: Number(parseFloat(pagoForm.monto)), // Asegurar que es un número
         fecha: pagoForm.fecha,
-        semana: prestamoSeleccionado.semana,
-        montoAbonado: parseFloat(pagoForm.montoAbonado || 0),
+        semana: Number(prestamoSeleccionado.semana), // Convertir explícitamente a número
+        montoAbonado: Number(parseFloat(pagoForm.montoAbonado || 0)), // Asegurar que es un número
         estadoPago: estadoPago,
         fechaEsperada: fechaEsperada.toISOString().split('T')[0],
         ...datosAdicionales
-      });
+      };
+      
+      // Verificar que todos los campos obligatorios están presentes
+      console.log("Enviando pago (datos completos):", datosPago);
+      console.log("Campo monto tipo:", typeof datosPago.monto);
+      console.log("Campo prestamoId tipo:", typeof datosPago.prestamoId);
+      console.log("Campo fecha tipo:", typeof datosPago.fecha);
+      console.log("Campo semana tipo:", typeof datosPago.semana);
       
       const response = await fetch('http://localhost:4000/api/pagos', {
         method: 'POST',
@@ -447,16 +629,7 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
           'Content-Type': 'application/json',
           'x-user-id': String(userData.id)
         },
-        body: JSON.stringify({
-          prestamoId: prestamoSeleccionado.id,
-          monto: parseFloat(pagoForm.monto),
-          fecha: pagoForm.fecha,
-          semana: prestamoSeleccionado.semana,
-          montoAbonado: parseFloat(pagoForm.montoAbonado || 0),
-          estadoPago: estadoPago,
-          fechaEsperada: fechaEsperada.toISOString().split('T')[0],
-          ...datosAdicionales
-        })
+        body: JSON.stringify(datosPago)
       });
       
       if (!response.ok) {
@@ -467,7 +640,10 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       const data = await response.json();
       
       // Mostrar mensaje apropiado según el tipo de pago
-      if (esLiquidacionTotal) {
+      if (data.esLiquidacionTotal) {
+        // Si fue una liquidación total con pagos automáticos
+        alert(`¡Préstamo pagado completamente!\n\n${data.mensaje || 'Se ha registrado la liquidación total y completado automáticamente el préstamo.'}`);
+      } else if (esLiquidacionTotal) {
         alert(`¡Préstamo pagado completamente! Se ha registrado la liquidación total del préstamo.`);
       } else if (aplicarAAtraso) {
         let mensaje = `Pago registrado correctamente.`;
@@ -494,7 +670,9 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       togglePaymentForm();
       
       // Actualizar préstamo seleccionado con los datos actualizados
-      setPrestamoSeleccionado(data.prestamo);
+      if (data.prestamo) {
+        setPrestamoSeleccionado(data.prestamo);
+      }
       
       // Recargar pagos y préstamos
       fetchPagosPorPrestamo(prestamoSeleccionado.id);
@@ -681,7 +859,8 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
     // Pedir confirmación al usuario
     const confirmacion = confirm(
       `¿Estás seguro de que deseas registrar un atraso para este préstamo?\n\n` +
-      `Esto marcará la semana ${prestamoSeleccionado.semana} como no pagada.`
+      `Esto marcará la semana ${prestamoSeleccionado.semana} como no pagada y ` +
+      `actualizará el estado del préstamo a "moroso".`
     );
     
     if (!confirmacion) {
@@ -700,7 +879,7 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
       const fechaEsperada = new Date(fechaInicio);
       fechaEsperada.setDate(fechaEsperada.getDate() + diasTranscurridos);
       
-      // Usar exactamente el mismo formato y campos que en registrarPago
+      // Crear objeto de datos para enviar al backend
       const datosPago = {
         prestamoId: prestamoSeleccionado.id,
         monto: 0,
@@ -709,60 +888,72 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
         montoAbonado: 0,
         estadoPago: 'atrasado',
         fechaEsperada: fechaEsperada.toISOString().split('T')[0],
-        // Añadir un campo que indica explícitamente que es un atraso
         esRegistroAtraso: true
       };
       
-      console.log("Enviando pago con atraso:", datosPago);
+      console.log("Enviando registro de atraso:", datosPago);
       
-      // Convertir valores numéricos a números (parseFloat) como en registrarPago
-      const response = await fetch('http://localhost:4000/api/pagos', {
+      const response = await fetch('http://localhost:4000/api/pagos/atraso', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-user-id': String(userData.id)
         },
-        body: JSON.stringify({
-          prestamoId: prestamoSeleccionado.id,
-          monto: parseFloat(datosPago.monto), // Usar parseFloat como en registrarPago
-          fecha: datosPago.fecha,
-          semana: parseInt(datosPago.semana), // Usar parseInt como en registrarPago
-          montoAbonado: parseFloat(datosPago.montoAbonado), // Usar parseFloat
-          estadoPago: datosPago.estadoPago,
-          fechaEsperada: datosPago.fechaEsperada,
-          esRegistroAtraso: true
-        })
+        body: JSON.stringify(datosPago)
       });
       
-      // Si hay error, mostrar detalle
+      // Manejar respuesta
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Respuesta del servidor completa:', response.status, errorText);
-        
-        // Analizar el error en detalle
-        try {
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const errorJson = JSON.parse(errorText);
-            console.log("Error JSON:", errorJson);
-            throw new Error(errorJson.error || `Error ${response.status}`);
-          } else {
-            throw new Error(`Error ${response.status}: ${errorText.substring(0, 100)}`);
-          }
-        } catch (parseError) {
-          console.error("Error al analizar respuesta:", parseError);
-          throw new Error(`Error ${response.status}`);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Error del servidor: ${response.status}`);
+        } else {
+          const errorText = await response.text();
+          throw new Error(`Error ${response.status}: ${errorText.substring(0, 100)}`);
         }
       }
       
-      // Si llegamos aquí, el pago se registró correctamente
-      console.log('Atraso registrado exitosamente');
+      // Procesar respuesta exitosa
+      const data = await response.json();
+      console.log('Atraso registrado exitosamente:', data);
       
-      // Recargar datos desde el servidor
+      // Actualizar estados y datos con los datos recibidos del servidor
+      if (data.prestamo) {
+        setPrestamoSeleccionado(data.prestamo);
+      }
+      
+      // Recargar datos
       await fetchPagosPorPrestamo(prestamoSeleccionado.id);
       await fetchPrestamosPorCliente(clienteSeleccionado.id);
       
-      alert('Atraso registrado correctamente');
+      // Obtener datos actualizados directamente desde la respuesta
+      const prestamoActualizado = data.prestamo;
+      
+      // Asegurar que los valores numéricos son tratados correctamente
+      const pagosAtrasados = prestamoActualizado.pagosAtrasados || 1; // Al menos 1 si acabamos de registrar
+      const atrasosNoPagados = prestamoActualizado.atrasosNoPagados || 1; // Al menos 1 si acabamos de registrar
+      const pagosATiempo = prestamoActualizado.pagosATiempo || 0;
+      const pagosParciales = prestamoActualizado.pagosParciales || 0;
+      const cuota = parseFloat(prestamoActualizado.cuota);
+      
+      // Calcular monto total atrasado (al menos debería ser igual a la cuota)
+      const montoAtrasado = cuota * atrasosNoPagados;
+      
+      // Mostrar mensaje con información detallada sobre el atraso
+      const mensaje = 
+        `Atraso registrado correctamente\n\n` +
+        `Detalles actualizados del préstamo:\n` +
+        `- Semana actual: ${prestamoActualizado.semana} de 13\n` +
+        `- Pagos a tiempo: ${pagosATiempo}\n` +
+        `- Atrasos acumulados: ${pagosAtrasados}\n` + 
+        `- Atrasos pendientes: ${atrasosNoPagados}\n` +
+        `- Pagos parciales: ${pagosParciales}\n` +
+        `- Estado: ${prestamoActualizado.estado.toUpperCase()}\n\n` +
+        `Se requerirá un pago de ${formatCurrency(montoAtrasado)} ` +
+        `para cubrir todos los atrasos pendientes.`;
+      
+      alert(mensaje);
       setLoading(false);
     } catch (error) {
       console.error('Error en registrarAtraso:', error);
@@ -779,8 +970,9 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center">
             <img src="/img/logo.svg" alt="Presta G" className="h-10 mr-3" />
-            <h1 className="text-2xl font-bold text-green-700">Gestión de Préstamos</h1>
+            
           </div>
+          <h1 className="text-2xl font-bold text-green-700">Gestión de Préstamos</h1>
           <div className="flex items-center">
             <span className="hidden md:block font-medium text-gray-700 mr-4">{userData.nombre}</span>
           </div>
@@ -966,7 +1158,7 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
 
             {/* Lista de clientes */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
-              {clientes.length === 0 ? (
+              {!Array.isArray(clientes) || clientes.length === 0 ? (
                 <div className="p-8 text-center">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -987,8 +1179,90 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                 <div>
                   <div className="border-b border-gray-200 px-6 py-4 bg-gray-50">
                     <h3 className="text-lg font-medium text-gray-700">
-                      {clientes.length} {clientes.length === 1 ? 'cliente encontrado' : 'clientes encontrados'}
+                      {Array.isArray(clientes) ? clientes.length : 0} {clientes && clientes.length === 1 ? 'cliente encontrado' : 'clientes encontrados'}
                     </h3>
+                    
+                    {/* Filtro rápido por nombre e ID */}
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      <div className="flex-1 min-w-[200px]">
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Filtrar por nombre..."
+                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            onChange={(e) => {
+                              const searchTerm = e.target.value.toLowerCase();
+                              if (searchTerm === '') {
+                                // Si el campo está vacío, restaurar todos los clientes
+                                setClientes(clientesOriginales || []);
+                              } else {
+                                // Filtrar los clientes originales por nombre
+                                if (!clientesOriginales || !Array.isArray(clientesOriginales)) {
+                                  return; // No hacer nada si no hay datos originales
+                                }
+                                const filteredClients = clientesOriginales.filter(cliente => 
+                                  cliente && cliente.nombre && cliente.nombre.toLowerCase().includes(searchTerm)
+                                );
+                                setClientes(filteredClients);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex-1 min-w-[200px]">
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 2a1 1 0 00-1 1v1a1 1 0 002 0V3a1 1 0 00-1-1zM4 4h3a3 3 0 006 0h3a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm2.5 7a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm2.45 4a2.5 2.5 0 10-4.9 0h4.9zM12 9a1 1 0 100 2h3a1 1 0 100-2h-3zm-1 4a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Filtrar por ID..."
+                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            onChange={(e) => {
+                              const searchTerm = e.target.value.toLowerCase();
+                              if (searchTerm === '') {
+                                // Si el campo está vacío, restaurar todos los clientes
+                                setClientes(clientesOriginales || []);
+                              } else {
+                                // Filtrar los clientes originales por ID
+                                if (!clientesOriginales || !Array.isArray(clientesOriginales)) {
+                                  return; // No hacer nada si no hay datos originales
+                                }
+                                const filteredClients = clientesOriginales.filter(cliente => 
+                                  cliente && cliente.idCliente && cliente.idCliente.toLowerCase().includes(searchTerm)
+                                );
+                                setClientes(filteredClients);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      <button
+                        className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        onClick={() => {
+                          // Restablecer a los clientes originales
+                          if (clientesOriginales && Array.isArray(clientesOriginales)) {
+                            setClientes([...clientesOriginales]);
+                          } else {
+                            // Si no hay datos originales, recargar de la API
+                            if (rutaSeleccionada && rutaSeleccionada.id) {
+                              fetchClientesPorRuta(rutaSeleccionada.id);
+                            }
+                          }
+                        }}
+                      >
+                        Limpiar filtros
+                      </button>
+                    </div>
                   </div>
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -1244,6 +1518,7 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cuota</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Inicio</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Progreso</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pagos</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
                       </tr>
@@ -1266,22 +1541,37 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex flex-col space-y-1">
+                              {(prestamo.pagosATiempo > 0 || prestamo.pagosParciales > 0 || prestamo.pagosAtrasados > 0) ? (
+                                <>
+                                  {prestamo.pagosATiempo > 0 && (
+                                    <span className="text-xs text-green-600 font-medium">
+                                      {prestamo.pagosATiempo} a tiempo
+                                    </span>
+                                  )}
+                                  {prestamo.pagosParciales > 0 && (
+                                    <span className="text-xs text-yellow-600 font-medium">
+                                      {prestamo.pagosParciales} parciales
+                                    </span>
+                                  )}
+                                  {prestamo.pagosAtrasados > 0 && (
+                                    <span className="text-xs text-red-600 font-medium">
+                                      {prestamo.pagosAtrasados} atrasados
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-xs text-gray-500">Sin pagos</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                               ${prestamo.estado === 'activo' ? 'bg-green-100 text-green-800' : 
                                 prestamo.estado === 'moroso' ? 'bg-red-100 text-red-800' : 
                                 prestamo.estado === 'pagado' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                               {prestamo.estado || 'activo'}
                             </span>
-                            {prestamo.pagosParciales > 0 && (
-                              <span className="ml-1 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                {prestamo.pagosParciales} parcial{prestamo.pagosParciales !== 1 ? 'es' : ''}
-                              </span>
-                            )}
-                            {prestamo.pagosAtrasados > 0 && (
-                              <span className="ml-1 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                                {prestamo.pagosAtrasados} atrasado{prestamo.pagosAtrasados !== 1 ? 's' : ''}
-                              </span>
-                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex space-x-2">
@@ -1413,20 +1703,28 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                         prestamoSeleccionado.estado === 'pagado' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                       {prestamoSeleccionado.estado || 'activo'}
                     </span>
-                    
-                    {/* Mostrar si tiene pagos atrasados o parciales */}
-                    {prestamoSeleccionado.pagosParciales > 0 && (
-                      <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800" title="Este préstamo tiene pagos parciales">
-                        {prestamoSeleccionado.pagosParciales} {prestamoSeleccionado.pagosParciales === 1 ? 'pago parcial' : 'pagos parciales'}
-                      </span>
-                    )}
-                    
-                    {prestamoSeleccionado.pagosAtrasados > 0 && (
-                      <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800" title="Este préstamo tiene pagos atrasados">
-                        {prestamoSeleccionado.pagosAtrasados} {prestamoSeleccionado.pagosAtrasados === 1 ? 'pago atrasado' : 'pagos atrasados'}
-                      </span>
-                    )}
                   </div>
+                </div>
+                
+                <div>
+                  <p className="text-gray-600">Pagos a tiempo:</p>
+                  <p className="font-medium text-green-600">
+                    {prestamoSeleccionado.pagosATiempo || 0} pago{(prestamoSeleccionado.pagosATiempo !== 1) ? 's' : ''}
+                  </p>
+                </div>
+                
+                <div>
+                  <p className="text-gray-600">Pagos parciales:</p>
+                  <p className="font-medium text-yellow-600">
+                    {prestamoSeleccionado.pagosParciales || 0} pago{(prestamoSeleccionado.pagosParciales !== 1) ? 's' : ''}
+                  </p>
+                </div>
+                
+                <div>
+                  <p className="text-gray-600">Pagos atrasados:</p>
+                  <p className="font-medium text-red-600">
+                    {prestamoSeleccionado.pagosAtrasados || 0} pago{(prestamoSeleccionado.pagosAtrasados !== 1) ? 's' : ''}
+                  </p>
                 </div>
               </div>
               
@@ -1481,11 +1779,23 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                     <button
                       type="button"
                       onClick={() => {
-                        const saldoPendiente = (prestamoSeleccionado.totalApagar || prestamoSeleccionado.monto * 1.3) - (prestamoSeleccionado.totalPagado || 0);
-                        setPagoForm({
-                          ...pagoForm,
-                          monto: saldoPendiente.toFixed(2)
-                        });
+                        try {
+                          // Calcular el saldo pendiente con conversión segura a número
+                          const totalPagado = Number(prestamoSeleccionado.totalPagado || 0);
+                          const totalAPagar = Number(prestamoSeleccionado.totalApagar || prestamoSeleccionado.monto * 1.3);
+                          const saldoPendiente = totalAPagar - totalPagado;
+                          
+                          // Asegurarnos de convertir a string para el input
+                          setPagoForm({
+                            ...pagoForm,
+                            monto: saldoPendiente.toFixed(2)
+                          });
+                          
+                          console.log("Calculado saldo pendiente: " + saldoPendiente.toFixed(2));
+                        } catch (error) {
+                          console.error("Error al calcular saldo pendiente:", error);
+                          alert("Error al calcular el saldo pendiente. Por favor intente de nuevo.");
+                        }
                       }}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow transition flex items-center"
                     >
@@ -1505,6 +1815,18 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                       name="monto"
                       value={pagoForm.monto}
                       onChange={handlePagoChange}
+                      onBlur={(e) => {
+                        // Al perder el foco, formatear el número
+                        if (e.target.value) {
+                          const value = parseFloat(e.target.value);
+                          if (!isNaN(value)) {
+                            setPagoForm(prev => ({
+                              ...prev,
+                              monto: value.toString()
+                            }));
+                          }
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="Monto de la cuota"
                       min="1"
@@ -1526,6 +1848,16 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                       name="montoAbonado"
                       value={pagoForm.montoAbonado}
                       onChange={handlePagoChange}
+                      onBlur={(e) => {
+                        // Al perder el foco, formatear el número
+                        const value = e.target.value ? parseFloat(e.target.value) : 0;
+                        if (!isNaN(value)) {
+                          setPagoForm(prev => ({
+                            ...prev,
+                            montoAbonado: value.toString()
+                          }));
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="0"
                       min="0"
@@ -1663,16 +1995,36 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                             ? 'bg-red-50' 
                             : pago.estadoPago === 'parcial' 
                               ? 'bg-yellow-50' 
-                              : ''
+                              : pago.estadoPago === 'fuera de tiempo' || pago.estadoPago === 'fuera de tiempo y parcial'
+                                ? 'bg-amber-50'
+                                : pago.esLiquidacionAutomatica
+                                  ? 'bg-blue-50'
+                                  : ''
                         }`}>
-                          <td className="px-6 py-4 whitespace-nowrap font-medium">{pago.semana}</td>
+                          <td className="px-6 py-4 whitespace-nowrap font-medium">
+                            {pago.semana}
+                            {pago.esLiquidacionAutomatica && (
+                              <div className="text-xs text-blue-600 font-normal mt-1">
+                                Registrado automáticamente
+                              </div>
+                            )}
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap">{formatDate(pago.fecha)}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {pago.estadoPago === 'parcial' || pago.estadoPago === 'atrasado y parcial' ? (
+                            {pago.estadoPago === 'parcial' || pago.estadoPago === 'atrasado y parcial' || pago.estadoPago === 'fuera de tiempo y parcial' ? (
                               <div className="flex flex-col">
-                                <span className="text-yellow-600">{formatCurrency(pago.monto)}</span>
+                                <span className={`${
+                                  pago.estadoPago === 'fuera de tiempo y parcial' ? 'text-amber-600' : 'text-yellow-600'
+                                }`}>{formatCurrency(pago.monto)}</span>
                                 <span className="text-xs text-gray-500">
                                   de {formatCurrency(prestamoSeleccionado.cuota)}
+                                </span>
+                              </div>
+                            ) : pago.esLiquidacionAutomatica ? (
+                              <div className="flex flex-col">
+                                <span className="text-blue-600">{formatCurrency(pago.monto)}</span>
+                                <span className="text-xs text-blue-500">
+                                  Liquidación automática
                                 </span>
                               </div>
                             ) : (
@@ -1687,11 +2039,17 @@ function RutasAdmin({ userData, rutaSeleccionada, onVolver }) {
                                 pago.estadoPago === 'atrasado' ? 'bg-red-100 text-red-800' : 
                                 pago.estadoPago === 'parcial' ? 'bg-yellow-100 text-yellow-800' : 
                                 pago.estadoPago === 'atrasado y parcial' ? 'bg-orange-100 text-orange-800' : 
+                                pago.estadoPago === 'fuera de tiempo' ? 'bg-amber-100 text-amber-800' :
+                                pago.estadoPago === 'fuera de tiempo y parcial' ? 'bg-amber-100 text-amber-800' :
+                                pago.esLiquidacionAutomatica ? 'bg-blue-100 text-blue-800' :
                                 'bg-gray-100 text-gray-800'}`}>
                               {pago.estadoPago === 'a tiempo' ? 'A tiempo' :
                                 pago.estadoPago === 'atrasado' ? 'Atrasado' :
                                 pago.estadoPago === 'parcial' ? 'Parcial' :
                                 pago.estadoPago === 'atrasado y parcial' ? 'Atrasado y parcial' :
+                                pago.estadoPago === 'fuera de tiempo' ? 'Fuera de tiempo' :
+                                pago.estadoPago === 'fuera de tiempo y parcial' ? 'Fuera de tiempo y parcial' :
+                                pago.esLiquidacionAutomatica ? 'Liquidación' :
                                 pago.estadoPago || 'A tiempo'}
                             </span>
                           </td>
