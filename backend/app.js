@@ -6,6 +6,20 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import setupTestUser from './utils/setupTestUser.js';
 import Usuario from './models/Usuario.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Configuración para obtener el directorio actual con ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Asegurar que el directorio de la base de datos exista
+const dbDir = path.join(__dirname, 'database');
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+  console.log('Directorio de base de datos creado:', dbDir);
+}
 
 // Inicializamos Express
 const app = express();
@@ -49,6 +63,7 @@ app.use('/api', rutasRoutes);
 // Conexión a la base de datos y sincronización de modelos
 sequelize.sync({ force: false }).then(async () => {
   console.log('Base de datos sincronizada');
+  console.log('Datos almacenados permanentemente en:', path.join(dbDir, 'prestamos.sqlite'));
   
   // Configurar usuario de prueba si no hay usuarios
   await setupTestUser();
