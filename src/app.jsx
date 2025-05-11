@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Rutas from './components/Rutas';
+import RutasAdmin from './components/Admin';
 
 function App() {
   const [activeForm, setActiveForm] = useState(null);
@@ -13,6 +14,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [userLoggedIn, setUserLoggedIn] = useState(false);
   const [userData, setUserData] = useState(null);
+  const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
 
   const showLoginForm = () => {
     setActiveForm('login');
@@ -135,6 +137,17 @@ function App() {
     localStorage.removeItem('userData');
     setUserLoggedIn(false);
     setUserData(null);
+    setRutaSeleccionada(null);
+  };
+
+  // Función para manejar la selección de una ruta
+  const handleSelectRuta = (ruta) => {
+    setRutaSeleccionada(ruta);
+  };
+
+  // Función para volver a la lista de rutas
+  const handleVolverRutas = () => {
+    setRutaSeleccionada(null);
   };
 
   // Verificar si hay un usuario en localStorage al cargar la página
@@ -152,9 +165,37 @@ function App() {
     }
   }, []);
 
-  // Renderizar Rutas directamente si el usuario está logueado
+  // Renderizar componente según si hay una ruta seleccionada
   if (userLoggedIn && userData) {
-    return <Rutas userData={userData} onLogout={handleLogout} />;
+    return (
+      <div>
+        <header className="bg-green-600 text-white p-2 flex justify-between items-center">
+          <div className="flex items-center">
+            <h2 className="text-lg font-bold">Préstamos App</h2>
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="bg-green-700 hover:bg-green-800 text-white font-bold py-1 px-3 rounded text-sm"
+          >
+            Cerrar Sesión
+          </button>
+        </header>
+        
+        {!rutaSeleccionada ? (
+          <Rutas 
+            userData={userData} 
+            onLogout={handleLogout} 
+            onSelectRuta={handleSelectRuta} 
+          />
+        ) : (
+          <RutasAdmin 
+            userData={userData} 
+            rutaSeleccionada={rutaSeleccionada}
+            onVolver={handleVolverRutas}
+          />
+        )}
+      </div>
+    );
   }
 
   return (

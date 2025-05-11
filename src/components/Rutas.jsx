@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-function Rutas({ userData, onLogout }) {
+function Rutas({ userData, onLogout, onSelectRuta }) {
   const [rutas, setRutas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -235,8 +235,13 @@ function Rutas({ userData, onLogout }) {
 
   // Ver detalle de la ruta (clientes)
   const verDetalleRuta = (id) => {
-    // En una implementación completa, aquí se navegaría a la vista de clientes de la ruta
-    alert(`Ver clientes de la ruta ${id} (funcionalidad en desarrollo)`);
+    // Buscar la ruta por su ID
+    const rutaSeleccionada = rutas.find(ruta => ruta.id === id);
+    
+    // Llamar a la función proporcionada por el componente padre para cambiar a la vista de administración
+    if (rutaSeleccionada && onSelectRuta) {
+      onSelectRuta(rutaSeleccionada);
+    }
   };
 
   // Formatear número como moneda

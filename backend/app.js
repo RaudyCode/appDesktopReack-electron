@@ -2,6 +2,9 @@ import express from 'express';
 import sequelize from './config/db.js';
 import usuarioRoutes from './routes/usuarioRoutes.js';
 import rutasRoutes from './routes/rutasRoutes.js';
+import clientesRoutes from './routes/clientesRoutes.js';
+import prestamosRoutes from './routes/prestamosRoutes.js';
+import pagosRoutes from './routes/pagosRoutes.js';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import setupTestUser from './utils/setupTestUser.js';
@@ -59,6 +62,12 @@ app.get('/api/diagnostico/usuarios', async (req, res) => {
 app.use('/api', usuarioRoutes);
 // Rutas de cobro
 app.use('/api', rutasRoutes);
+// Rutas de clientes
+app.use('/api', clientesRoutes);
+// Rutas de préstamos
+app.use('/api', prestamosRoutes);
+// Rutas de pagos
+app.use('/api', pagosRoutes);
 
 // Conexión a la base de datos y sincronización de modelos
 sequelize.sync({ force: false }).then(async () => {
@@ -75,6 +84,11 @@ sequelize.sync({ force: false }).then(async () => {
     console.log('- http://localhost:4000/api/login (POST)');
     console.log('- http://localhost:4000/api/usuarios (POST)');
     console.log('- http://localhost:4000/api/rutas (GET, POST)');
+    console.log('- http://localhost:4000/api/clientes (GET, POST)');
+    console.log('- http://localhost:4000/api/prestamos (GET, POST)');
+    console.log('- http://localhost:4000/api/pagos (GET, POST)');
+    console.log('- http://localhost:4000/api/recibos/pago/:pagoId (GET)');
+    console.log('- http://localhost:4000/api/recibos/ruta/:rutaId (GET)');
     console.log('- http://localhost:4000/api/status (GET)');
     console.log('- http://localhost:4000/api/diagnostico/usuarios (GET)');
   });
